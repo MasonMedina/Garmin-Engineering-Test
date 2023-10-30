@@ -6,7 +6,6 @@ import time
 from requests.exceptions import HTTPError
 
 
-
 def main():
     # Args
     support = ''
@@ -28,44 +27,59 @@ def main():
     # Api Checking Loop
     trigger = True
     error_count = 0
+    total_error = 0
     success_count = 0
+    total_success = 0
     outage_timer = Timer()
+    monitor_timer = Timer()
+    uptime_timer = Timer()
+    monitor_timer.start()
+
+    uptime_list = []
     while trigger:
         try:
             try:
                 response_json, code = call_api('https://api.qa.fitpay.ninja/health')
 
-                # Test for outages
-
-                # if error_count < 5:
-                #    code = 400
-
+                # Successful API Check
                 if 200 <= code < 300:
                     success_count += 1
+                    uptime_timer.start()
                     if error_count >= 2:
-                        print('API Outage Restored')
-                        send_error_mail(support, f'API Service Restored, Total Outage time: {outage_timer.stop():0.4f} seconds')
+                        total_success += 1
+                        print(' API Outage Restored')
+                        send_error_mail(support,
+                                        f'API Service Restored, Total Outage duration: {outage_timer.stop():0.1f} seconds')
                     error_count = 0
                     print(f'API check successful, the status is: {response_json['status']}')
 
+                # Unsuccessful API Check
                 if 400 <= code < 600:
                     error_count += 1
                     success_count = 0
+                    if error_count > 2:
+                        print(f'The API check has reported that the outage is ongoing, '
+                              f'the status is: {response_json['status']}')
                     if error_count == 2:
-
+                        total_error += 1
+                        print(f'An Outage in the API has occurred, the status is: {response_json['status']}')
+                        uptime_list.append(uptime_timer.stop())
                         outage_timer.start()
                         match code:
                             case 400:
-                                send_error_mail(support, 'Error 400: API receiving multiple bad requests.')
+                                send_error_mail(support,
+                                                'Error 400: API receiving multiple bad requests.')
                             case 401:
-                                send_error_mail(support, 'Error 401: API receiving multiple requests without valid '
-                                                         'API key.')
+                                send_error_mail(support,
+                                                'Error 401: API receiving multiple requests without valid API key.')
                             case 402:
-                                send_error_mail(support, 'Error 402: API receiving multiple requests with valid '
-                                                         'Parameters but requests failed.')
+                                send_error_mail(support,
+                                                'Error 402: API receiving multiple requests with valid Parameters but '
+                                                'requests failed.')
                             case 404:
-                                send_error_mail(support, 'Error 404: API receiving multiple requests for an item that '
-                                                         'does not exist.')
+                                send_error_mail(support,
+                                                'Error 404: API receiving multiple requests for an item that does not '
+                                                'exist.')
                             case 500:
                                 send_error_mail(support, 'Error 500: FitPay server error registered.')
                             case 502:
@@ -80,7 +94,7 @@ def main():
             except HTTPError as http_err:
                 print(f'HTTP error occurred: {http_err}')
             except requests.ConnectionError as err:
-                print(f'Connection error occured: {err}')
+                print(f'Connection error occurred: {err}')
             except Exception as err:
                 print(f'Other error occurred: {err}')
 
@@ -90,6 +104,15 @@ def main():
         except:
             trigger = False
 
+    if len(uptime_list) >= 2:
+        average_uptime = sum(uptime_list) / len(uptime_list)
+    else:
+        average_uptime = sum(uptime_list) / 1
+
+    send_error_mail(support,
+                    f'During the monitors {monitor_timer.stop():0.1f} seconds of uptime there was {total_error} outages '
+                    f'and {total_success} restorations of '
+                    f'service. With an average uptime between outages of {average_uptime:0.1f} seconds')
     print('Ending Monitoring')
 
 
