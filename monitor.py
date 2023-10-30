@@ -32,7 +32,6 @@ def main():
         if input in ['-s', '--support']:
             support = value
 
-    support = str(support).replace('{', '').replace('}', '')
     print(f'Support Member Email {support}')
 
     # Api Checking Loop
