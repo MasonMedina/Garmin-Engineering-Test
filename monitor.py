@@ -10,6 +10,17 @@ def main():
     # Args
     support = ''
     argv = sys.argv[1:]
+    trigger = True
+    error_count = 0
+    total_error = 0
+    success_count = 0
+    total_success = 0
+    outage_timer = Timer()
+    monitor_timer = Timer()
+    uptime_timer = Timer()
+    monitor_timer.start()
+    uptime_list = []
+    outage_list = []
 
     # Grab Support Email args
     try:
@@ -25,27 +36,20 @@ def main():
     print(f'Support Member Email {support}')
 
     # Api Checking Loop
-    trigger = True
-    error_count = 0
-    total_error = 0
-    success_count = 0
-    total_success = 0
-    outage_timer = Timer()
-    monitor_timer = Timer()
-    uptime_timer = Timer()
-    monitor_timer.start()
 
-    uptime_list = []
     while trigger:
         try:
             try:
                 response_json, code = call_api('https://api.qa.fitpay.ninja/health')
 
+                if not uptime_timer.running:
+                    uptime_timer.start()
+
                 # Successful API Check
                 if 200 <= code < 300:
                     success_count += 1
-                    uptime_timer.start()
                     if error_count >= 2:
+                        uptime_timer.start()
                         total_success += 1
                         print(' API Outage Restored')
                         send_error_mail(support,
@@ -57,6 +61,11 @@ def main():
                 if 400 <= code < 600:
                     error_count += 1
                     success_count = 0
+                    t = time.localtime()
+                    current_time = time.strftime("%H:%M:%S", t)
+                    outage = (response_json['status'], current_time)
+                    outage_list.append(outage)
+
                     if error_count > 2:
                         print(f'The API check has reported that the outage is ongoing, '
                               f'the status is: {response_json['status']}')
@@ -110,9 +119,10 @@ def main():
         average_uptime = sum(uptime_list) / 1
 
     send_error_mail(support,
-                    f'During the monitors {monitor_timer.stop():0.1f} seconds of uptime there was {total_error} outages '
+                    f'During the monitors {monitor_timer.stop():0.1f} seconds of uptime there were {total_error} outages '
                     f'and {total_success} restorations of '
-                    f'service. With an average uptime between outages of {average_uptime:0.1f} seconds')
+                    f'service. With an average uptime between outages of {average_uptime:0.1f} seconds\n'
+                    f'Here is a list of all reported outages during the monitoring and their status codes {outage_list}')
     print('Ending Monitoring')
 
 
@@ -146,13 +156,16 @@ def send_error_mail(to_email, body):
 class Timer:
     def __init__(self):
         self._start_time = None
+        self.running = False
 
     def start(self):
         self._start_time = time.perf_counter()
+        self.running = True
 
     def stop(self):
         elapsed_time = time.perf_counter() - self._start_time
         self._start_time = None
+        self.running = False
         return elapsed_time
 
 
